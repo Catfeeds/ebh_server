@@ -1,0 +1,433 @@
+<?php 
+	//评论类
+class ReviewModel extends CModel{
+	//课件评论
+	 public function getcourseware($param) {
+		$wherearr = array();
+		if(!empty($param['cwid']))
+			$wherearr[] = 'cs.cwid = '.$param['cwid'];
+		if(!empty($param['opid']))
+			$wherearr[] = 'l.opid = '.$param['opid'];
+		if (!empty ( $wherearr ))
+		{
+			$sql ['wherearr'] = 'WHERE ' . implode ( ' AND ', $wherearr );
+		}
+		$sql = 'SELECT * FROM ( SELECT r.upid,u.username,u.realname,u.face,u.sex,l.type as type2,l.toid,l.fromip,l.dateline,l.message,cs.title,cs.uid as authorid FROM ebh_reviews r join ebh_logs l on r.logid = l.logid join ebh_users u on l.uid=u.uid join ebh_coursewares cs on cs.cwid=l.toid join ebh_roomcourses rc on rc.cwid=cs.cwid '.$sql ['wherearr'].' and r.upid = 0 and l.type = \'courseware\') T ';
+		if(!empty($param['order'])) {
+			$sql .= ' ORDER BY '.$param['order'];
+		} else {
+			$sql .= ' ORDER BY cs.cwid DESC';
+		}
+		if(!empty($param['limit'])) {
+			$sql .= ' limit '.$param['limit'];
+		} else {
+			$sql .= ' limit 0，10';
+		}
+		return $this->db->query($sql)->list_array();
+	}
+
+	/*
+	评论列表
+	@param array $param
+	@return array
+	*/
+	public function getreviewlist($param){
+		$sql = ' select r.logid,r.subject,u.username,r.good,r.useful,r.bad,l.dateline,l.fromip,l.type,u.sex,u.face,u.groupid,r.score,r.subject from ebh_reviews r left join ebh_logs l on r.logid = l.logid left join ebh_users u on l.uid = u.uid';
+		$setarr = array();
+		if(!empty($param['q']))
+			$wherearr[] = ' (r.subject like "%'. $this->db->escape_str($param['q']) .'%" or u.username like "%' . $this->db->escape_str($param['q']) .'%")';
+		if (!empty($param['type']))
+            $wherearr[] = 'l.type = \''.$param['type'].'\'';
+		if (!empty($param['toid']))
+            $wherearr[] = 'toid = '.$param['toid'];
+		if (!empty($param['opid']))
+            $wherearr[] = 'opid = '.$param['opid'];
+		if (!empty($param['upid']))
+            $wherearr[] = 'r.upid = '.$param['upid'];
+		if(!empty($wherearr))
+			$sql.= ' WHERE '.implode(' AND ',$wherearr);
+		if(!empty($param['order']))
+			$sql.= ' order by ' .$param['order'];
+		else
+			$sql.= ' order by l.logid desc';
+		if(!empty($param['limit']))
+			$sql.= ' limit ' . $param['limit'];
+		else {
+			if (empty($param['page']) || $param['page'] < 1)
+				$page = 1;
+			else
+				$page = $param['page'];
+			$pagesize = empty($param['pagesize']) ? 10 : $param['pagesize'];
+			$start = ($page - 1) * $pagesize;
+			$sql .= ' limit ' . $start . ',' . $pagesize;
+		}
+		return $this->db->query($sql)->list_array();
+	}
+
+	/*
+	删除评论
+	并且删除对他的回复
+	@param int $logid
+	@return bool
+	*/
+	public function deletereview($param) {
+		if(empty($param) || empty($param['logid']) || empty($param['uid'])) {
+			return FALSE;
+		}
+		$wherearr = array('logid'=>$param['logid'],'uid'=>$param['uid']);
+		$delafrows = $this->db->delete('ebh_logs',$wherearr);
+		if($delafrows > 0) {
+			$this->db->delete('ebh_reviews',array('logid'=>$param['logid']));
+			$sql = 'select logid from ebh_reviews where upid='.$param['logid'];	//删除对评论的回复数据
+			$item = $this->db->query($sql)->row_array();
+			if(!empty($item)) {
+				$sublogid = $item['logid'];
+				$wherearr = array('logid'=>$sublogid);
+				$subdelafrows = $this->db->delete('ebh_logs',$wherearr);
+				if($subdelafrows > 0) {
+					$this->db->delete('ebh_reviews',array('logid'=>$sublogid));
+				}
+			}
+		}
+		return $delafrows;
+	}
+
+    /**
+     * 插入评论数据
+     * @param type $param
+     * @return type
+     */
+    public function insert($param = array()) {
+        $logid = $this->insertlog($param);
+        if ($logid > 0) {
+            $setarr = array();
+            $setarr['logid'] = $logid;
+            $setarr['levels'] = empty($param['levels']) ? $logid : $param['levels'];
+            if (!empty($param['upid'])) {
+                $setarr['upid'] = $param['upid'];
+            }
+            if (isset($param['service'])) {
+                $setarr['service'] = $param['service'];
+            }
+            if (isset($param['environment'])) {
+                $setarr['environment'] = $param['environment'];
+            }
+            if (isset($param['score'])) {
+                $setarr['score'] = $param['score'];
+            }
+            if (isset($param['useful'])) {
+                $setarr['useful'] = $param['useful'];
+            }
+            if (isset($param['useless'])) {
+                $setarr['useless'] = $param['useless'];
+            }
+            if (isset($param['viewnum'])) {
+                $setarr['viewnum'] = $param['viewnum'];
+            }
+            if (isset($param['replynum'])) {
+                $setarr['replynum'] = $param['replynum'];
+            }
+            if (!empty($param['subject'])) {
+                $setarr['subject'] = $param['subject'];
+            }
+            if (isset($param['good'])) {
+                $setarr['good'] = $param['good'];
+            }
+            if (isset($param['bad']) ) {
+                $setarr['bad'] = $param['bad'];
+            }
+            $this->db->insert('ebh_reviews',$setarr);
+        }
+        return $logid;
+    }
+
+    /**
+     * 插入ebh_logs表记录
+     * @param type $param
+     * @return boolean
+     */
+    public function insertlog($param) {
+        $setarr = array();
+        if (empty($param['uid']) || empty($param['opid']) || empty($param['toid']) || empty($param['type']))
+            return FALSE;
+        $setarr['uid'] = $param['uid'];
+        $setarr['opid'] = $param['opid'];
+        $setarr['toid'] = $param['toid'];
+        $setarr['type'] = $param['type'];
+        if (!empty($param['subject'])) {
+            $setarr['message'] = $param['subject'];
+        }
+        if (!empty($param['value'])) {
+            $setarr['value'] = $param['value'];
+        }
+        if (!empty($param['credit'])) {
+            $setarr['credit'] = $param['credit'];
+        }
+        if (!empty($param['fromip'])) {
+            $setarr['fromip'] = $param['fromip'];
+        }
+        $setarr['dateline'] = SYSTIME;
+        $logid = $this->db->insert('ebh_logs', $setarr);
+        return $logid;
+    }
+
+    /**
+     * 根据课件编号获取评论列表
+     * @param type $queryarr
+     * @return boolean
+     */
+    // public function getReviewListByCwid($queryarr = array()) {
+    //     if (empty($queryarr['cwid']))
+    //         return FALSE;
+    //     if (empty($queryarr['page']) || $queryarr['page'] < 1)
+    //         $page = 1;
+    //     else
+    //         $page = $queryarr['page'];
+    //     $pagesize = empty($queryarr['pagesize']) ? 10 : $queryarr['pagesize'];
+    //     $start = ($page - 1) * $pagesize;
+    //     $sql = 'select l.logid,l.dateline,r.upid,r.subject,r.score,l.uid,u.uid,u.username,u.realname,u.sex,u.face from ebh_reviews r ' .
+    //             'join ebh_logs l on (r.logid = l.logid) ' .
+    //             'join ebh_users u on (u.uid = l.uid) ' .
+    //             'where l.toid=' . $queryarr['cwid'] . ' and r.upid=0 and l.type=\'courseware\' order by l.logid desc ';
+    //     $sql .= 'limit ' . $start . ',' . $pagesize;
+    //     $reviews = $this->db->query($sql)->list_array();
+    //     $upids = '';
+    //     $logids = array();
+    //     foreach ($reviews as $review) {
+    //         if (empty($upids)) {
+    //             $upids = $review['logid'];
+    //         } else {
+    //             $upids .= ',' . $review['logid'];
+    //         }
+    //         $review['rsubject'] = '';
+    //         $logids[$review['logid']] = $review;
+    //     }
+    //     if (!empty($logids)) {   //获取回复数据
+    //         $rsql = 'select r.logid,r.upid,r.subject rsubject from ebh_reviews r where r.upid in (' . $upids . ')';
+    //         $rlist = $this->db->query($rsql)->list_array();
+    //         foreach ($rlist as $r) {
+    //             if (isset($logids[$r['upid']]))
+    //                 $logids[$r['upid']]['rsubject'] = $r['rsubject'];
+    //         }
+    //     }
+    //     return $logids;
+    // }
+    /**
+     * 根据课件编号获取评论列表
+     * @param type $queryarr
+     * @return boolean
+     */
+    public function getReviewListByCwid($queryarr = array()) {
+        if (empty($queryarr['cwid']))
+            return FALSE;
+        if (empty($queryarr['page']) || $queryarr['page'] < 1)
+            $page = 1;
+        else
+            $page = $queryarr['page'];
+        $pagesize = empty($queryarr['pagesize']) ? 10 : $queryarr['pagesize'];
+        $start = ($page - 1) * $pagesize;
+        $sql = 'select r.logid,r.dateline,r.subject,r.score,r.uid,u.uid,u.username,u.realname,u.sex,u.face,u.groupid,r.replyuid,r.replysubject,r.replydateline from ebh_reviews r ' .
+                'join ebh_users u on (u.uid = r.uid) ' .
+                'where r.toid=' . $queryarr['cwid'] . ' and r.type=\'courseware\' and r.shield=0 order by r.logid desc ';
+        $sql .= 'limit ' . $start . ',' . $pagesize;
+        return $this->db->query($sql)->list_array();
+
+    }
+
+    /**
+     * 根据课件编号获取评论列表记录数
+     * @param type $queryarr
+     * @return type
+     */
+    public function getReviewCountByCwid($queryarr = array()) {
+        $count = 0;
+        $sql = 'SELECT count(*) count from ebh_reviews r ' .
+                'join ebh_logs l on (r.logid = l.logid) ' .
+                'where l.toid=' . $queryarr['cwid'] . ' and r.upid=0 and l.type=\'courseware\'';
+        $countrow = $this->db->query($sql)->row_array();
+        if (!empty($countrow))
+            $count = $countrow['count'];
+        return $count;
+    }
+
+
+     /**
+     * 根据用户编号获取评论列表及课件详情信息(用于评论交流)
+     * @params type $params
+     * @return boolean
+     */
+    public function getReviewListByUid($params) {
+        if(!empty($params['rev'])){
+             $sql = 'select  r.logid,r.subject,r.`type`,r.uid,r.`type`,c.message,r.toid,c.title,c.tag,c.summary,c.message,c.cwname,c.dateline,c.displayorder,r.score,u.realname,u.username,c.cwurl,t.realname,t.nickname,r.shield,rc.crid,r.replyuid,r.replysubject,r.replydateline from ebh_reviews r join ebh_users u on (u.uid = r.uid) join ebh_coursewares c on (c.cwid = r.toid) join ebh_roomcourses rc on (rc.cwid = c.cwid) join ebh_teachers t on (t.teacherid = c.uid ) ';
+        }else{
+            $sql = 'select r.logid,r.subject,r.`type`,r.uid,r.`type`,c.message,r.toid,c.title,c.tag,c.summary,c.message,c.cwname,c.dateline,c.displayorder,r.score,u.realname,u.username,c.cwurl,t.realname,t.nickname,r.shield,u.sex,u.face,rc.crid,r.replyuid,r.replysubject,r.replydateline from ebh_reviews r join ebh_users u on (u.uid = r.uid) join ebh_coursewares c on (c.cwid = r.toid) join ebh_roomcourses rc on (rc.cwid = c.cwid) join ebh_teachers t on (t.teacherid = c.uid )';
+        }
+        $wherearr = array();
+ 
+        if (!empty($params ['uid'])) {
+            $wherearr[] = ' r.uid ='.$params['uid'];
+        }
+        if (!empty($params ['crid'])) {
+            $wherearr[] = ' rc.crid ='.$params['crid'];
+        }
+        if (isset($params ['upid'])) {
+            $wherearr[] = ' r.upid !='.$params['upid'];
+        }
+        if (isset($params ['shield'])) {
+            $wherearr[] = ' r.shield !='.$params['shield'];
+        }
+        if (isset($params ['replysubject'])) {
+            $wherearr[] = ' r.replysubject !=\'\' ';
+        }
+        if(!empty($params['q']))
+            $wherearr[] = ' (r.subject like "%'. $this->db->escape_str($params['q']) .'%" or t.realname like "%' . $this->db->escape_str($params['q']) .'%")';
+        if(isset($params['status'])){
+            $wherearr[] = ' c.status ='.$params['status'];
+        }
+        $sql .= ' WHERE '.implode(' AND ', $wherearr);
+        if(!empty($params['order'])) {
+            $sql .= ' ORDER BY '.$params['order'];
+        } else {
+            $sql .= ' ORDER BY r.logid desc';
+        }
+        if(!empty($params['limit'])) {
+            $sql .= ' limit '.$params['limit'];
+        } else {
+            if (empty($params['page']) || $params['page'] < 1)
+                $page = 1;
+            else
+                $page = $params['page'];
+            $pagesize = empty($params['pagesize']) ? 10 : $params['pagesize'];
+            $start = ($page - 1) * $pagesize;
+            $sql .= ' limit ' . $start . ',' . $pagesize;
+        }   
+        $reviews = $this->db->query($sql)->list_array();
+        return $reviews;
+    }
+
+    /**
+     * 获取平台下的评论和回复信息
+     */
+    public function getreviewlistbycrid($param) {
+
+        $sql = 'select l.logid as id,c.title as subject,r.subject as message,l.dateline as date,c.cwid from  ebh_logs l ' .
+                'join ebh_reviews r on r.logid = l.logid ' .
+                'join ebh_users u on (u.uid = l.uid) ' .
+                'join ebh_coursewares c on c.cwid=l.toid ' .
+                'join ebh_roomcourses rc on (c.cwid = rc.cwid) ';
+        $wherearr = array();
+        if (!empty($param['crid']))  //教室编号
+            $wherearr[] = 'rc.crid=' . $param['crid'];
+        if (!empty($param['uid']))   //评论者编号
+            $wherearr[] = 'l.uid=' . $param['uid'];
+        $wherearr[] = 'l.opid=8192';
+        $wherearr[] = 'l.type=\'courseware\'';
+        $wherearr[] = 'r.upid=0';
+        $sql .= ' WHERE ' . implode(' AND ', $wherearr);
+        if (!empty($param['order']))
+            $sql .= ' ORDER BY ' . $param['order'];
+        else
+            $sql .= ' ORDER BY l.logid DESC ';
+        if (!empty($param['limit']))
+            $sql .= ' LIMIT ' . $param['limit'];
+        else {
+            if (empty($param['page']) || $param['page'] < 1)
+                $page = 1;
+            else
+                $page = $param['page'];
+            $pagesize = empty($param['pagesize']) ? 10 : $param['pagesize'];
+            $start = ($page - 1) * $pagesize;
+            $sql .= 'limit ' . $start . ',' . $pagesize;
+        }
+        $reviews = $this->db->query($sql)->list_array();
+        $upids = '';
+        $logids = array();
+        foreach ($reviews as $review) {
+            if (empty($upids)) {
+                $upids = $review['id'];
+            } else {
+                $upids .= ',' . $review['id'];
+            }
+            $logids[$review['id']] = $review;
+        }
+        if (!empty($logids)) {   //获取回复数据
+            $rsql = 'select r.logid,r.upid,r.subject rsubject,u.username,u.realname,l.dateline from ebh_reviews r '.
+					'join ebh_logs l on (l.logid = r.logid) '.
+					'join ebh_users u on (u.uid=l.uid) where r.upid in (' . $upids . ')';
+            $rlist = $this->db->query($rsql)->list_array();
+            foreach ($rlist as $r) {
+                if (isset($logids[$r['upid']])) {
+                    $logids[$r['upid']]['rmessage'] = $r['rsubject'];
+					$name = empty($r['realname']) ? $r['username'] : $r['realname'];
+					$logids[$r['upid']]['rauthor'] = $name;
+					$logids[$r['upid']]['rdate'] = empty($r['dateline']) ? '' : date('Y-m-d H:i:s',$r['dateline']);
+				}
+            }
+        }
+        return $logids;
+    }
+
+	/**
+	* 根据条件获取最后一次评论等日志的时间
+	*/
+	public function getLastLogTime($param) {
+		$lasttime = 0;
+		$sql = 'select l.dateline from ebh_logs l';
+		$wherearr = array();
+		if(!empty($param['logid'])) {
+            $wherearr[] = 'l.logid = '.$param['logid'];
+        }
+		if(!empty($param['uid'])) {
+            $wherearr[] = 'l.uid = '.$param['uid'];
+        }
+		if(!empty($param['toid'])) {
+            $wherearr[] = 'l.toid = '.$param['toid'];
+        }
+		if(!empty($param['opid'])) {
+            $wherearr[] = 'l.opid = '.$param['opid'];
+        }
+		if(!empty($param['value'])) {
+            $wherearr[] = 'l.value = '.$param['value'];
+        }
+		if(!empty($param['type'])) {
+            $wherearr[] = 'l.type = \''.$param['type'].'\'';
+        }
+		if(empty($wherearr))
+			return FALSE;
+        $sql .= ' WHERE '.implode(' AND ',$wherearr);
+		$sql .= ' order by l.logid desc ';
+		$row = $this->db->query($sql)->row_array();
+		if(!empty($row))
+			$lasttime = $row['dateline'];
+		return $lasttime;
+	}
+	/**
+	*获取个人评论的评分值
+	*/
+	public function getReviewScore($params){
+		$score = 0;
+		$sql = ' select r.score from ebh_reviews r left join ebh_logs l on r.logid = l.logid ';
+		$wherearr = array();
+		if (!empty($params['type']))
+            $wherearr[] = 'l.type = \''.$params['type'].'\'';
+		if (!empty($params['uid']))
+            $wherearr[] = 'l.uid= '.$params['uid'];
+		if (!empty($params['toid']))
+            $wherearr[] = 'l.toid = '.$params['toid'];
+		if (!empty($params['opid']))
+            $wherearr[] = 'l.opid= '.$params['opid'];
+		if (!empty($params['value']))
+            $wherearr[] = 'l.value= '.$params['value'];
+		if(!empty($wherearr))
+			$sql.= ' WHERE '.implode(' AND ',$wherearr);
+		if(!empty($params['order']))
+			$sql.= ' order by '.$params['order'];
+		if(!empty($params['limit']))
+			$sql.= ' limit ' . $params['limit'];
+		$row = $this->db->query($sql)->row_array();
+		if(!empty($row)) 
+			$score = $row['score'];
+		return $score;
+	}
+}
+?>
