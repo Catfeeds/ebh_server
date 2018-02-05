@@ -50,8 +50,10 @@ class PermissionController extends CControl {
 			//随机抽取一台服务器
 			$target_server = $servers[array_rand($servers,1)];
 			$url = 'http://'.$target_server.'/exam/simpleinfo/'.$eid;
+			$k = authcode(json_encode(array('uid'=>$uid,'crid'=>$crid,'t'=>SYSTIME)),'ENCODE');
+			$ret = $this->do_post($url,array('k'=>$k));
 			
-			$ret = json_decode(do_post($url,array()));
+			$ret = json_decode($ret);
 			
 			if(!empty($ret) && !empty($ret->datas->info)){
 				
@@ -107,4 +109,26 @@ class PermissionController extends CControl {
 		}
 		echo json_encode($result);
 	}
+	
+	/*
+	 **私有方法，提交数据到java后台返回json数据
+	 */
+	private function do_post($url, $data){
+		$ch = curl_init();
+		$datastr = json_encode($data);
+		curl_setopt($ch, CURLOPT_RETURNTRANSFER, TRUE); 
+		curl_setopt($ch, CURLOPT_POST, TRUE); 
+		curl_setopt($ch, CURLOPT_HEADER, FALSE);
+		curl_setopt($ch, CURLOPT_POSTFIELDS,$datastr);
+		curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+		    'Content-Type: application/json',
+		    'Content-Length: ' . strlen($datastr))
+		);
+		curl_setopt($ch, CURLOPT_URL, $url);
+		$ret = curl_exec($ch);
+		curl_close($ch);
+		
+		return $ret;
+		
+	}	
 }
